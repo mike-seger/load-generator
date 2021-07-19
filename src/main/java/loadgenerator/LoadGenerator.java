@@ -15,7 +15,7 @@ public class LoadGenerator {
 
             new Thread(new ClientGenerator(url, numberOfClients)).start();
         } else {
-            System.out.printf("Usage: %s <url> <number of clients>", LoadGenerator.class.getName());
+            System.out.printf("Usage: %s <url> <number of clients>\n", LoadGenerator.class.getName());
         }
     }
 }
