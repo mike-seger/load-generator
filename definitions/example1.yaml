@@ -1,6 +1,8 @@
 urls:
   - http://localhost:3000/gradlew.bat
   - '@definitions/example1-urls.txt'
+systemProperties:
+  syspropp1: syspropp-value1
 headers:
   header1: value1
   Accept:  text/plain

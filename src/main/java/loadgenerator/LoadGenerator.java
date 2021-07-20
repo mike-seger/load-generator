@@ -17,18 +17,20 @@ public class LoadGenerator implements IOAware {
         if (args.length == 1) {
             Yaml yaml = new Yaml(new Constructor(LoadDefinition.class));
             LoadDefinition loadDefinition = yaml.load(loadFile(args[0]));
-            if(loadDefinition.getUrls()==null || loadDefinition.getUrls().size()==0) {
-                System.err.println("You must provide at leas 1 url");
-                System.exit(1);
-            } else {
-                List<String> newUrls = new ArrayList<>();
+            if(loadDefinition.getSystemProperties()!=null)
+                loadDefinition.getSystemProperties().forEach(System::setProperty);
+            List<String> newUrls = new ArrayList<>();
+            if(loadDefinition.getUrls()!=null)
                 for(String url : loadDefinition.getUrls()) {
                     if(url.startsWith("@")) {
                         newUrls.addAll(Arrays.stream(loadFile(url.substring(1)).split("[\r\n]"))
                             .map(String::trim).collect(Collectors.toList()));
                     } else newUrls.add(url);
                 }
-                loadDefinition.setUrls(newUrls);
+            loadDefinition.setUrls(newUrls);
+            if(loadDefinition.getUrls().size()==0) {
+                System.err.println("You must provide at least 1 url");
+                System.exit(1);
             }
             new Thread(new ClientGenerator(loadDefinition)).start();
         } else {
