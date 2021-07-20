@@ -8,26 +8,21 @@ import org.asynchttpclient.Response;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.concurrent.atomic.AtomicInteger;
 
 public class ClientGenerator implements Runnable {
 	private Thread clientGenerator;
-	private final AsyncHttpClient asyncHttpClient;
-	private final AtomicInteger activeClients;
-	private final AtomicInteger numberOfRequests;
-	private final Map<Integer, AtomicInteger> requestStats = new TreeMap<>();
-	private final int numberOfClients;
-	private final String url;
-	private static final int reportingInterval = 500;
+	private final AsyncHttpClient asyncHttpClient = new DefaultAsyncHttpClient();
+	private final AtomicInteger activeClients = new AtomicInteger(0);
+	private final AtomicInteger numberOfRequests = new AtomicInteger(0);
+	private final Map<String, AtomicInteger> requestStats = new TreeMap<>();
+	private final LoadDefinition loadDefinition;
 
-	public ClientGenerator(String url, int numberOfClients) {
-		this.asyncHttpClient = new DefaultAsyncHttpClient();
-		this.activeClients = new AtomicInteger(0);
-		this.numberOfRequests = new AtomicInteger(0);
-		this.numberOfClients = numberOfClients;
-		this.url = url;
+	public ClientGenerator(LoadDefinition loadDefinition) {
+		this.loadDefinition = loadDefinition;
 	}
 
 	@Override
@@ -35,22 +30,15 @@ public class ClientGenerator implements Runnable {
 		long lastReported = System.currentTimeMillis();
 
 		clientGenerator = Thread.currentThread();
-		System.out.println("URL: " + url);
-		System.out.println("Number of clients: " + numberOfClients);
 
 		while (true) {
-			while (activeClients.get() < numberOfClients) {
-				request();
-				numberOfRequests.incrementAndGet();
-				activeClients.incrementAndGet();
-			}
-
+			while (activeClients.get() < loadDefinition.getParallel()) request();
 			try {
 				if(System.currentTimeMillis()>lastReported) {
 					report(requestStats.toString());
-					lastReported += reportingInterval;
+					lastReported += loadDefinition.getReportingInterval();
 				}
-				Thread.sleep(reportingInterval);
+				Thread.sleep(loadDefinition.getReportingInterval());
 			} catch (InterruptedException e) {}
 		}
 	}
@@ -62,12 +50,21 @@ public class ClientGenerator implements Runnable {
 		System.out.printf("%s: %s\n", now.format(formatter), message);
 	}
 
+	private String getNextUrl() {
+		int n = numberOfRequests.incrementAndGet();
+		return loadDefinition.getUrls().get(n%loadDefinition.getUrls().size());
+	}
+
 	private void request() {
-		asyncHttpClient.prepareGet(url).execute(new AsyncCompletionHandler<Response>() {
+
+		numberOfRequests.incrementAndGet();
+		activeClients.incrementAndGet();
+		asyncHttpClient.prepareGet(getNextUrl()).setSingleHeaders(loadDefinition.getHeaders()).execute(new AsyncCompletionHandler<Response>() {
 			@Override
-			public Response onCompleted(Response response) throws Exception {
-				requestStats.computeIfAbsent(response.getStatusCode(),
-					status -> new AtomicInteger(0)).incrementAndGet();
+			public Response onCompleted(Response response) {
+				if(numberOfRequests.get()>=loadDefinition.getWarmup())
+					requestStats.computeIfAbsent(response.getStatusCode()+"",
+						status -> new AtomicInteger(0)).incrementAndGet();
 				activeClients.decrementAndGet();
 				clientGenerator.interrupt();
 				return response;
@@ -75,8 +72,17 @@ public class ClientGenerator implements Runnable {
 
 			@Override
 			public void onThrowable(Throwable t) {
-				requestStats.computeIfAbsent(-1,
-					status -> new AtomicInteger(0)).incrementAndGet();
+				if(numberOfRequests.get()>=loadDefinition.getWarmup())
+					requestStats.computeIfAbsent(
+						(t.getMessage()+"")
+							.replace("\r"," ")
+							.replace("\n"," ")
+							.replaceAll("  *"," ")
+							.replaceAll(".*connection timed out.*","Connection timed out"),
+					status -> {
+						t.printStackTrace();
+						return new AtomicInteger(0);
+					}).incrementAndGet();
 				activeClients.decrementAndGet();
 				clientGenerator.interrupt();
 			}

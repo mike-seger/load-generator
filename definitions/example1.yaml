@@ -1,0 +1,9 @@
+urls:
+  - http://localhost:3000/gradlew.bat
+  - '@definitions/example1-urls.txt'
+headers:
+  header1: value1
+  Accept:  text/plain
+  User-Agent: Mozilla/5.0
+parallel: 10
+reportingInterval: 5000
